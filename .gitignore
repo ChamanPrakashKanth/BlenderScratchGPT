@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Project data / generated artifacts
+blender_api_5_1/
+blender_api_5_1.txt
+checkpoints/
+data/
+*.pt
+*.bin
+*.ckpt
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
