@@ -1,223 +1,217 @@
 # BlenderScratchGPT
 
-A small experimental GPT-style language model trained on the Blender 5.1 Python API documentation.
+A lightweight research project for training a small GPT-style language model on Blender 5.1 Python API documentation.
 
-The project explores how a custom Transformer can learn Blender Python API patterns from documentation, with the longer-term goal of specializing a pretrained coding model such as Qwen2.5-Coder-3B for Blender-specific coding assistance.
+The goal is to build a compact Blender-focused code assistant that can learn patterns from the official API docs and generate sensible Blender Python snippets, with the longer-term possibility of extending the model with parameter-efficient fine-tuning such as LoRA or QLoRA.
 
-## Project Status
+## What this project does
 
-**Experimental / Research Project**
+- Scrapes Blender API reference pages from local HTML documentation
+- Cleans and normalizes the extracted text
+- Builds a custom character-level vocabulary and tokenized dataset
+- Trains a compact PyTorch Transformer model from scratch
+- Generates Blender-related text and Python code from a prompt
+- Includes exploratory scientific ML research experiments alongside the Blender model work
 
-Current progress:
+This is an experimental project rather than a production Blender plugin or an officially supported AI tool.
 
-- Blender 5.1 Python API documentation obtained as offline HTML
-- Documentation converted into a clean text corpus
-- Custom tokenizer and PyTorch dataset pipeline
-- Custom TinyGPT implemented in PyTorch
-- Custom Fourier positional encoding
-- Custom `ComplexReLU` activation
-- 4 Transformer blocks with self-attention
-- Model trained successfully for 2,000 steps
-- Approximately 853K trainable parameters
-- Training loss reduced from **5.7320 → 0.3795**
+## Research experiments
 
-The next stage is evaluation and Blender code generation, followed by Qwen2.5-Coder-3B LoRA/QLoRA specialization.
+The repository also contains a separate exploratory script, `test.py`, which demonstrates a Physics-Informed Neural Network (PINN) for a mass-spring-damper system.
 
-## Architecture
+This research prototype:
 
-```text
-Token IDs
-    ↓
-Token Embedding
-    ↓
-Fourier Positional Encoding
-    ↓
-Transformer Block × 4
-    │
-    ├── LayerNorm
-    ├── Self-Attention
-    ├── LayerNorm
-    └── Complex Feed Forward
-           │
-           ├── Linear
-           ├── ComplexReLU
-           └── Linear
-    ↓
-LayerNorm
-    ↓
-Language Model Head
-    ↓
-Next-token logits
-```
+- defines a neural network model for the displacement $x(t)$
+- computes the residual of the ODE $m \ddot{x} + c \dot{x} + kx = 0$
+- enforces the initial conditions via an additional loss term
+- trains the model with automatic differentiation in PyTorch
+- plots the predicted trajectory over time
 
-## Current Model
+This experiment is not part of the Blender documentation model itself, but it shows a parallel research direction focused on scientific machine learning and differentiable physics. It is useful as a reference for testing optimization, autodiff, and PINN-style training workflows in the same project environment.
 
-| Parameter | Value |
-|---|---:|
-| Parameters | ~852,968 |
-| Vocabulary size | 232 |
-| Embedding dimension | 128 |
-| Attention heads | 4 |
-| Transformer layers | 4 |
-| Context length | 128 |
-| Batch size | 32 |
-| Learning rate | 3e-4 |
-| Training steps | 2,000 |
+## Project status
 
-## Training Result
+Current progress includes:
 
-The first training run produced:
+- Blender 5.1 Python API documentation collected locally
+- HTML docs converted into a clean text corpus
+- Character-level tokenizer and dataset pipeline implemented
+- Tiny GPT-style Transformer implemented in PyTorch
+- Fourier positional encoding and custom activation logic added
+- Training pipeline working with a small model and checkpoint saving
+- Generation loop implemented for interactive prompting
 
-```text
-Step       Train Loss
----------------------
-1          5.7320
-100        2.3949
-500        1.1262
-1000       0.8207
-1500       0.5107
-2000       0.3795
-```
+The current model is intentionally small and designed as a research baseline rather than a fully robust Blender assistant.
 
-The overall training loss decreased substantially, showing that the model learned statistical patterns from the Blender API corpus.
+## Model overview
 
-**Important:** training loss alone does not demonstrate that the model understands Blender or generates correct Python. Validation loss, held-out examples, and actual code execution are required for meaningful evaluation.
+The training setup uses a compact decoder-only Transformer with:
 
-## Dataset
+- vocabulary size from the extracted Blender corpus
+- context length of 128
+- embedding size of 128
+- 4 attention heads
+- 4 transformer blocks
+- AdamW optimizer
+- cross-entropy language modeling objective
 
-The corpus is derived from the official Blender 5.1 Python API documentation.
-
-Relevant API areas include:
-
-- `bpy`
-- `bpy.types`
-- `bpy.ops`
-- `bpy.data`
-- `bpy.context`
-- `bpy.props`
-- `bmesh`
-- `mathutils`
-- `gpu`
-- `bpy_extras`
-
-The documentation contains Blender classes, methods, properties, functions, parameters, descriptions, and Python examples.
-
-The offline HTML documentation is parsed and converted into text before tokenization.
-
-## Project Structure
+## Repository structure
 
 ```text
 BlenderScratchGPT/
-│
-├── dataset.py
-├── model.py
-├── train.py
-├── tokenizer.py
 ├── README.md
-├── requirements.txt
-│
-├── data/
-│   └── tokenized.pt
-│
-├── checkpoints/
-│   └── blender_gpt.pt
-│
-└── blender_api_5_1/
-    └── extracted Blender documentation
+├── .gitignore
+├── test.py                    # PINN research experiment for a mass-spring-damper system
+├── scrape_blender.py          # Extract text from Blender HTML docs
+├── clean_text.py              # Cleaning and normalization
+├── blender_tokenizer.py       # Character-level tokenization pipeline
+├── dataset.py                 # Dataset and dataloader setup
+├── model.py                   # Tiny GPT model definition
+├── train.py                   # Training loop and checkpoint export
+├── generate.py                # Text generation from a trained model
+├── chat.py                    # Interactive prompt loop
+├── checkpoint.py              # Checkpoint utilities
+├── evaluate.py                # Evaluation utilities
+├── dataloader.py              # Optional loader helpers
+├── blender_api_5_1/           # Offline Blender API docs (HTML)
+├── data/                      # Tokenized data and generated corpora
+├── checkpoints/               # Saved model checkpoints
+├── .venv/                     # Local virtual environment (ignored by Git)
+└── blender_api_5_1.txt        # Generated combined text corpus
 ```
 
-Large generated files and the local Python environment should not be committed to GitHub.
+## Setup
 
-## Installation
-
-Create a virtual environment:
-
-```bash
-python -m venv .venv
-```
-
-Activate it on Windows:
+Create and activate a virtual environment:
 
 ```powershell
+python -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
 Install dependencies:
 
-```bash
-pip install torch
-pip install beautifulsoup4
+```powershell
+pip install torch beautifulsoup4
 ```
 
-Or, if `requirements.txt` is provided:
+If a requirements file is added later, use:
 
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-## Dataset Preparation
+## Data pipeline
 
-Extract the Blender 5.1 offline HTML documentation and place it in the project directory.
+### 1) Collect the Blender API docs
 
-Then run:
+Place the local HTML reference files under the project folder, for example:
 
-```bash
-python dataset.py
+```text
+blender_api_5_1/
 ```
 
-This prepares the documentation for training and produces the tokenized dataset.
+### 2) Scrape the docs
+
+```powershell
+python scrape_blender.py
+```
+
+This script walks the HTML folder and extracts readable content into a text corpus.
+
+### 3) Clean and normalize the corpus
+
+```powershell
+python clean_text.py
+```
+
+### 4) Tokenize the corpus
+
+```powershell
+python blender_tokenizer.py
+```
+
+This creates a tokenized dataset in `data/tokenized.pt`.
 
 ## Training
 
-Run:
+Launch training with:
 
-```bash
+```powershell
 python train.py
 ```
 
-The current training configuration uses:
-
-```python
-BLOCK_SIZE = 128
-BATCH_SIZE = 32
-
-N_EMBED = 128
-N_HEAD = 4
-N_LAYER = 4
-
-LEARNING_RATE = 3e-4
-STEPS = 2000
-```
-
-The trained checkpoint is saved as:
+The training loop saves checkpoints into the `checkpoints/` directory. A typical checkpoint path is:
 
 ```text
 checkpoints/blender_gpt.pt
 ```
 
-## Intended Capabilities
+## Generation
 
-The eventual Blender coding assistant should be able to help with tasks such as:
+After training, generate text or Blender-like code with:
 
-```text
-Create a cube and move it 2 meters along X.
+```powershell
+python generate.py
 ```
 
-Potential output:
+The script loads the saved model and samples from the learned distribution. You can also use:
+
+```powershell
+python chat.py
+```
+
+for an interactive prompt loop.
+
+## Example use
+
+A typical prompt might look like:
+
+```text
+Prompt: create a cube and move it along the x axis
+```
+
+The model may output Blender Python such as:
 
 ```python
 import bpy
 
-obj = bpy.context.object
+obj = bpy.context.active_object
 obj.location.x += 2
 ```
 
-Potential capabilities include:
+This is meant as a research prototype and is not guaranteed to be correct or production-safe.
 
-- Blender Python code generation
-- `bpy` API assistance
-- API lookup
-- Procedural modeling
+## Important limitations
+
+- This project is trained on documentation text, not on verified Blender execution traces.
+- Training loss is not the same as functional correctness.
+- Generated code may be syntactically valid but semantically wrong.
+- The model is small and designed for experimentation, not as a production coding assistant.
+
+## Roadmap
+
+Possible next steps:
+
+1. Improve corpus cleaning and filtering
+2. Add validation metrics and held-out evaluation
+3. Improve generation quality with better sampling and decoding
+4. Add support for code-focused prompts and Blender scripting examples
+5. Explore LoRA/QLoRA fine-tuning from a stronger base model
+
+## License
+
+This project is intended for academic and experimental use. Add or review the repository license before public or commercial use.
+
+## Contributing
+
+Contributions are welcome for:
+
+- data-cleaning improvements
+- model architecture experiments
+- generation quality tuning
+- documentation and reproducibility enhancements
+
 - Scene manipulation
 - Blender automation
 - Add-on development
