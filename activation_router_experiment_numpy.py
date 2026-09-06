@@ -330,6 +330,8 @@ class TinyGPTNumpy:
             self.routing_sums[layer] += flat.sum(axis=0)
             self.routing_hard[layer] += np.bincount(np.argmax(flat, axis=1), minlength=3)
             self.routing_count[layer] += flat.shape[0]
+        if self.variant == "hybrid":
+            return 0.5 * z.relu() + 0.5 * routed
         return routed
 
     def forward(self, idx, targets=None, collect=False):
@@ -382,7 +384,12 @@ class AdamW:
 
 def build_corpus():
     tracked = subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
-    selected = [p for p in tracked if p.endswith((".py", ".md")) and p != Path(__file__).name]
+    selected = [
+        p for p in tracked
+        if p.endswith((".py", ".md"))
+        and p != Path(__file__).name
+        and not p.startswith("experiment_results/")
+    ]
     chunks = []
     for relative in selected:
         chunks.append(f"\n# FILE: {relative}\n" + (ROOT / relative).read_text(encoding="utf-8", errors="replace"))
@@ -460,6 +467,7 @@ def train_one(model, train_batches, val_batches, verbose=True):
 def render_report(result):
     b = result["variants"]["complex_relu"]
     a = result["variants"]["adaptive_router"]
+    h = result["variants"]["hybrid"]
     labels = ["linear", "signed_log", "stabilized_exp"]
     rows = []
     for layer, freq in enumerate(a["routing_soft_frequencies_by_layer"], 1):
@@ -483,24 +491,24 @@ This report contains results from an actual CPU run of `activation_router_experi
 
 ## Results
 
-| Metric | ComplexReLU | Adaptive router |
-|---|---:|---:|
-| Initial validation loss | {b['initial_validation_loss']:.4f} | {a['initial_validation_loss']:.4f} |
-| Final train loss | {b['final_train_loss']:.4f} | {a['final_train_loss']:.4f} |
-| Mean final-20 train loss | {b['mean_last_20_train_loss']:.4f} | {a['mean_last_20_train_loss']:.4f} |
-| Final validation loss | {b['final_validation_loss']:.4f} | {a['final_validation_loss']:.4f} |
-| Mean gradient L2 | {b['gradient_l2_mean']:.4f} | {a['gradient_l2_mean']:.4f} |
-| Peak gradient L2 | {b['gradient_l2_max']:.4f} | {a['gradient_l2_max']:.4f} |
-| Peak gradient element | {b['gradient_abs_max']:.4f} | {a['gradient_abs_max']:.4f} |
-| Finite steps | {100*b['finite_step_fraction']:.1f}% | {100*a['finite_step_fraction']:.1f}% |
-| CPU training time | {b['training_seconds']:.2f} s | {a['training_seconds']:.2f} s |
-| Steps/second | {b['steps_per_second']:.2f} | {a['steps_per_second']:.2f} |
+| Metric | ComplexReLU | Adaptive router | Hybrid (50/50) |
+|---|---:|---:|---:|
+| Initial validation loss | {b['initial_validation_loss']:.4f} | {a['initial_validation_loss']:.4f} | {h['initial_validation_loss']:.4f} |
+| Final train loss | {b['final_train_loss']:.4f} | {a['final_train_loss']:.4f} | {h['final_train_loss']:.4f} |
+| Mean final-20 train loss | {b['mean_last_20_train_loss']:.4f} | {a['mean_last_20_train_loss']:.4f} | {h['mean_last_20_train_loss']:.4f} |
+| Final validation loss | {b['final_validation_loss']:.4f} | {a['final_validation_loss']:.4f} | {h['final_validation_loss']:.4f} |
+| Mean gradient L2 | {b['gradient_l2_mean']:.4f} | {a['gradient_l2_mean']:.4f} | {h['gradient_l2_mean']:.4f} |
+| Peak gradient L2 | {b['gradient_l2_max']:.4f} | {a['gradient_l2_max']:.4f} | {h['gradient_l2_max']:.4f} |
+| Peak gradient element | {b['gradient_abs_max']:.4f} | {a['gradient_abs_max']:.4f} | {h['gradient_abs_max']:.4f} |
+| Finite steps | {100*b['finite_step_fraction']:.1f}% | {100*a['finite_step_fraction']:.1f}% | {100*h['finite_step_fraction']:.1f}% |
+| CPU training time | {b['training_seconds']:.2f} s | {a['training_seconds']:.2f} s | {h['training_seconds']:.2f} s |
+| Steps/second | {b['steps_per_second']:.2f} | {a['steps_per_second']:.2f} | {h['steps_per_second']:.2f} |
 
-Adaptive validation-loss change versus baseline: **{delta:+.2f}%** (negative is better). Adaptive wall-time change: **{speed:+.2f}%**.
+Adaptive validation-loss change versus baseline: **{delta:+.2f}%** (negative is better). Adaptive wall-time change: **{speed:+.2f}%**. Hybrid validation-loss change: **{100*(h['final_validation_loss']-b['final_validation_loss'])/b['final_validation_loss']:+.2f}%**.
 
 ## Adaptive routing frequencies
 
-Soft frequencies are mean probability mass. The final column gives hard argmax frequencies in `linear / signed_log / stabilized_exp` order.
+Soft frequencies are mean probability mass for the hybrid's adaptive path. The final column gives hard argmax frequencies in `linear / signed_log / stabilized_exp` order.
 
 | Layer | Linear (soft) | Signed-log (soft) | Stabilized-exp (soft) | Hard argmax frequencies |
 |---:|---:|---:|---:|---:|
@@ -520,9 +528,10 @@ def main():
     initialized = TinyGPTNumpy(len(chars), np.random.default_rng(SEED), "complex_relu")
     baseline = initialized.clone("complex_relu")
     adaptive = initialized.clone("adaptive_router")
+    hybrid = initialized.clone("hybrid")
     count_b = sum(p.data.size for p in baseline.params.values())
     count_a = sum(p.data.size for p in adaptive.params.values())
-    assert count_b == count_a
+    assert count_b == count_a == sum(p.data.size for p in hybrid.params.values())
     results = {
         "run_timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "backend": "NumPy self-contained reverse-mode autodiff on CPU",
@@ -530,16 +539,17 @@ def main():
         "model": {"parameter_count": count_b, "block_size": BLOCK_SIZE, "batch_size": BATCH_SIZE, "n_embed": N_EMBED, "n_head": N_HEAD, "n_layer": N_LAYER, "steps": STEPS, "seed": SEED},
         "variants": {},
     }
-    for model in (baseline, adaptive):
+    for model in (baseline, adaptive, hybrid):
         results["variants"][model.variant] = train_one(model, train_batches, val_batches)
     timing = {
         "complex_relu": [results["variants"]["complex_relu"]["training_seconds"]],
         "adaptive_router": [results["variants"]["adaptive_router"]["training_seconds"]],
+        "hybrid": [results["variants"]["hybrid"]["training_seconds"]],
     }
     # Add four fresh complete runs per arm and alternate order to reduce warm-up
     # and order bias. Losses are deterministic; only timing is aggregated.
     for repeat in range(1, TIMING_REPEATS):
-        order = ("adaptive_router", "complex_relu") if repeat % 2 else ("complex_relu", "adaptive_router")
+        order = ("adaptive_router", "hybrid", "complex_relu") if repeat % 2 else ("complex_relu", "hybrid", "adaptive_router")
         for variant in order:
             fresh = initialized.clone(variant)
             rerun = train_one(fresh, train_batches, val_batches, verbose=False)
