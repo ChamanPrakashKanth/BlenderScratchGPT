@@ -10,33 +10,34 @@ This report contains results from an actual CPU run of `activation_router_experi
 - Training speed is the median of 5 complete runs with alternating execution order
 - Baseline output: existing ComplexReLU behavior (`ReLU(real)` + `ReLU(imag)`, algebraically ReLU over the concatenated hidden vector)
 - Adaptive output: per-value soft selection among linear, signed_log, stabilized_exp using learned per-hidden-dimension affine router logits
+- Composed output: adaptive routing first, followed by ComplexReLU on the routed hidden vector
 - Stabilized exponential: `sign(z) * expm1(tanh(abs(z)))`, bounded to prevent exponential overflow
 
 ## Results
 
-| Metric | ComplexReLU | Adaptive router | Hybrid (50/50) |
+| Metric | ComplexReLU | Adaptive router | ComplexReLU over router |
 |---|---:|---:|---:|
-| Initial validation loss | 5.3784 | 5.4147 | 5.4157 |
-| Final train loss | 2.9571 | 2.9396 | 2.9660 |
-| Mean final-20 train loss | 2.8580 | 2.8599 | 2.8712 |
-| Final validation loss | 3.1509 | 3.1110 | 3.1504 |
-| Mean gradient L2 | 1.1071 | 1.1180 | 1.1137 |
-| Peak gradient L2 | 4.1955 | 3.8663 | 3.7708 |
-| Peak gradient element | 0.7375 | 0.7162 | 0.7457 |
+| Initial validation loss | 5.3784 | 5.4147 | 5.3998 |
+| Final train loss | 2.9571 | 2.9396 | 2.9577 |
+| Mean final-20 train loss | 2.8580 | 2.8599 | 2.8622 |
+| Final validation loss | 3.1509 | 3.1110 | 3.1474 |
+| Mean gradient L2 | 1.1071 | 1.1180 | 1.0550 |
+| Peak gradient L2 | 4.1955 | 3.8663 | 4.2634 |
+| Peak gradient element | 0.7375 | 0.7162 | 0.7556 |
 | Finite steps | 100.0% | 100.0% | 100.0% |
-| CPU training time | 0.59 s | 1.59 s | 1.65 s |
-| Steps/second | 272.94 | 100.48 | 96.68 |
+| CPU training time | 0.61 s | 1.60 s | 1.60 s |
+| Steps/second | 262.58 | 99.85 | 99.86 |
 
-Adaptive validation-loss change versus baseline: **-1.27%** (negative is better). Adaptive wall-time change: **+171.63%**. Hybrid validation-loss change: **-0.02%**.
+Adaptive validation-loss change versus baseline: **-1.27%** (negative is better). Adaptive wall-time change: **+162.97%**. ComplexReLU-over-router validation-loss change: **-0.11%**.
 
 ## Adaptive routing frequencies
 
-Soft frequencies are mean probability mass for the hybrid's adaptive path. The final column gives hard argmax frequencies in `linear / signed_log / stabilized_exp` order.
+Soft frequencies are mean probability mass for the composed model's adaptive path. The final column gives hard argmax frequencies in `linear / signed_log / stabilized_exp` order.
 
 | Layer | Linear (soft) | Signed-log (soft) | Stabilized-exp (soft) | Hard argmax frequencies |
 |---:|---:|---:|---:|---:|
-| 1 | 33.59% | 32.94% | 33.47% | 38.10% / 39.05% / 22.84% |
-| 2 | 33.19% | 33.51% | 33.30% | 28.31% / 46.11% / 25.58% |
+| 1 | 33.76% | 32.75% | 33.49% | 38.10% / 37.03% / 24.87% |
+| 2 | 33.55% | 33.01% | 33.44% | 31.27% / 41.34% / 27.39% |
 
 ## Interpretation limits
 
