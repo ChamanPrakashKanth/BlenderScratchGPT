@@ -330,8 +330,10 @@ class TinyGPTNumpy:
             self.routing_sums[layer] += flat.sum(axis=0)
             self.routing_hard[layer] += np.bincount(np.argmax(flat, axis=1), minlength=3)
             self.routing_count[layer] += flat.shape[0]
-        if self.variant == "hybrid":
-            return 0.5 * z.relu() + 0.5 * routed
+        if self.variant == "complex_relu_over_router":
+            # Composition requested by the experiment: route first, then apply
+            # the repository's ComplexReLU behavior to the routed hidden value.
+            return routed.relu()
         return routed
 
     def forward(self, idx, targets=None, collect=False):
@@ -440,7 +442,7 @@ def train_one(model, train_batches, val_batches, verbose=True):
             print(f"{model.variant:16s} step={step:3d} loss={losses[-1]:.4f} grad_l2={norm:.3f}", flush=True)
     seconds = time.perf_counter() - started
     final_val = evaluate(model, val_batches, collect=True)
-    if model.variant == "adaptive_router":
+    if model.variant != "complex_relu":
         soft = model.routing_sums / model.routing_count[:, None]
         hard = model.routing_hard / model.routing_count[:, None]
     else:
@@ -467,11 +469,11 @@ def train_one(model, train_batches, val_batches, verbose=True):
 def render_report(result):
     b = result["variants"]["complex_relu"]
     a = result["variants"]["adaptive_router"]
-    h = result["variants"]["hybrid"]
+    h = result["variants"]["complex_relu_over_router"]
     labels = ["linear", "signed_log", "stabilized_exp"]
     rows = []
-    for layer, freq in enumerate(a["routing_soft_frequencies_by_layer"], 1):
-        hard = a["routing_hard_frequencies_by_layer"][layer - 1]
+    for layer, freq in enumerate(h["routing_soft_frequencies_by_layer"], 1):
+        hard = h["routing_hard_frequencies_by_layer"][layer - 1]
         rows.append("| " + str(layer) + " | " + " | ".join(f"{100*x:.2f}%" for x in freq) + " | " + " / ".join(f"{100*x:.2f}%" for x in hard) + " |")
     delta = 100 * (a["final_validation_loss"] - b["final_validation_loss"]) / b["final_validation_loss"]
     speed = 100 * (a["training_seconds"] - b["training_seconds"]) / b["training_seconds"]
@@ -487,11 +489,12 @@ This report contains results from an actual CPU run of `activation_router_experi
 - Training speed is the median of {TIMING_REPEATS} complete runs with alternating execution order
 - Baseline output: existing ComplexReLU behavior (`ReLU(real)` + `ReLU(imag)`, algebraically ReLU over the concatenated hidden vector)
 - Adaptive output: per-value soft selection among {', '.join(labels)} using learned per-hidden-dimension affine router logits
+- Composed output: adaptive routing first, followed by ComplexReLU on the routed hidden vector
 - Stabilized exponential: `sign(z) * expm1(tanh(abs(z)))`, bounded to prevent exponential overflow
 
 ## Results
 
-| Metric | ComplexReLU | Adaptive router | Hybrid (50/50) |
+| Metric | ComplexReLU | Adaptive router | ComplexReLU over router |
 |---|---:|---:|---:|
 | Initial validation loss | {b['initial_validation_loss']:.4f} | {a['initial_validation_loss']:.4f} | {h['initial_validation_loss']:.4f} |
 | Final train loss | {b['final_train_loss']:.4f} | {a['final_train_loss']:.4f} | {h['final_train_loss']:.4f} |
@@ -504,11 +507,11 @@ This report contains results from an actual CPU run of `activation_router_experi
 | CPU training time | {b['training_seconds']:.2f} s | {a['training_seconds']:.2f} s | {h['training_seconds']:.2f} s |
 | Steps/second | {b['steps_per_second']:.2f} | {a['steps_per_second']:.2f} | {h['steps_per_second']:.2f} |
 
-Adaptive validation-loss change versus baseline: **{delta:+.2f}%** (negative is better). Adaptive wall-time change: **{speed:+.2f}%**. Hybrid validation-loss change: **{100*(h['final_validation_loss']-b['final_validation_loss'])/b['final_validation_loss']:+.2f}%**.
+Adaptive validation-loss change versus baseline: **{delta:+.2f}%** (negative is better). Adaptive wall-time change: **{speed:+.2f}%**. ComplexReLU-over-router validation-loss change: **{100*(h['final_validation_loss']-b['final_validation_loss'])/b['final_validation_loss']:+.2f}%**.
 
 ## Adaptive routing frequencies
 
-Soft frequencies are mean probability mass for the hybrid's adaptive path. The final column gives hard argmax frequencies in `linear / signed_log / stabilized_exp` order.
+Soft frequencies are mean probability mass for the composed model's adaptive path. The final column gives hard argmax frequencies in `linear / signed_log / stabilized_exp` order.
 
 | Layer | Linear (soft) | Signed-log (soft) | Stabilized-exp (soft) | Hard argmax frequencies |
 |---:|---:|---:|---:|---:|
@@ -528,10 +531,10 @@ def main():
     initialized = TinyGPTNumpy(len(chars), np.random.default_rng(SEED), "complex_relu")
     baseline = initialized.clone("complex_relu")
     adaptive = initialized.clone("adaptive_router")
-    hybrid = initialized.clone("hybrid")
+    composed = initialized.clone("complex_relu_over_router")
     count_b = sum(p.data.size for p in baseline.params.values())
     count_a = sum(p.data.size for p in adaptive.params.values())
-    assert count_b == count_a == sum(p.data.size for p in hybrid.params.values())
+    assert count_b == count_a == sum(p.data.size for p in composed.params.values())
     results = {
         "run_timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "backend": "NumPy self-contained reverse-mode autodiff on CPU",
@@ -539,17 +542,17 @@ def main():
         "model": {"parameter_count": count_b, "block_size": BLOCK_SIZE, "batch_size": BATCH_SIZE, "n_embed": N_EMBED, "n_head": N_HEAD, "n_layer": N_LAYER, "steps": STEPS, "seed": SEED},
         "variants": {},
     }
-    for model in (baseline, adaptive, hybrid):
+    for model in (baseline, adaptive, composed):
         results["variants"][model.variant] = train_one(model, train_batches, val_batches)
     timing = {
         "complex_relu": [results["variants"]["complex_relu"]["training_seconds"]],
         "adaptive_router": [results["variants"]["adaptive_router"]["training_seconds"]],
-        "hybrid": [results["variants"]["hybrid"]["training_seconds"]],
+        "complex_relu_over_router": [results["variants"]["complex_relu_over_router"]["training_seconds"]],
     }
     # Add four fresh complete runs per arm and alternate order to reduce warm-up
     # and order bias. Losses are deterministic; only timing is aggregated.
     for repeat in range(1, TIMING_REPEATS):
-        order = ("adaptive_router", "hybrid", "complex_relu") if repeat % 2 else ("complex_relu", "hybrid", "adaptive_router")
+        order = ("adaptive_router", "complex_relu_over_router", "complex_relu") if repeat % 2 else ("complex_relu", "complex_relu_over_router", "adaptive_router")
         for variant in order:
             fresh = initialized.clone(variant)
             rerun = train_one(fresh, train_batches, val_batches, verbose=False)
