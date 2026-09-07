@@ -29,6 +29,57 @@ This research prototype:
 
 This experiment is not part of the Blender documentation model itself, but it shows a parallel research direction focused on scientific machine learning and differentiable physics. It is useful as a reference for testing optimization, autodiff, and PINN-style training workflows in the same project environment.
 
+### Adaptive activation routing
+
+`activation_router_experiment_numpy.py` contains a controlled, self-contained
+language-model experiment derived from the repository's decoder architecture.
+It tests three feed-forward activation paths:
+
+1. the existing ComplexReLU baseline
+2. an adaptive per-hidden-dimension router over linear, signed-log, and
+   stabilized-exponential transformations
+3. the composed path requested by the experiment, where routing happens first
+   and ComplexReLU activates the routed value:
+
+$$
+z \rightarrow R(z) \rightarrow \operatorname{ComplexReLU}(R(z))
+$$
+
+The arms use identical initialized model tensors, parameter count, seed,
+pre-generated batches, optimizer, and training budget. The baseline carries
+dormant router-shaped parameters to keep the total parameter count matched.
+
+#### Executed smoke-test results
+
+| Activation path | Final train loss | Validation loss | Median steps/s |
+|---|---:|---:|---:|
+| ComplexReLU | 2.9571 | 3.1509 | 262.58 |
+| Adaptive router | **2.9396** | **3.1110** | 99.85 |
+| ComplexReLU over router | 2.9577 | 3.1474 | 99.86 |
+
+All three arms completed 160/160 steps with finite losses and gradients. Pure
+adaptive routing reduced validation loss by 1.27% relative to ComplexReLU, while
+ComplexReLU over the router reduced it by only 0.11%. The composed model's soft
+router probabilities remained close to uniform; hard selections mildly favored
+signed-log, particularly in the second layer.
+
+These numbers are a single-seed CPU smoke test, not a general performance claim.
+The ignored Blender documentation corpus and `data/tokenized.pt` were not
+available in the execution environment, so the frozen character corpus was
+built from the repository's original tracked Python and Markdown files. The
+test also uses a reduced 20,352-parameter NumPy/autodiff decoder. A substantive
+conclusion requires the real Blender corpus, multiple seeds, confidence
+intervals, and replication in the full PyTorch model.
+
+Run the reproducible experiment with:
+
+```bash
+python activation_router_experiment_numpy.py
+```
+
+The generated report and raw loss/gradient curves are stored under
+`experiment_results/`.
+
 ## Project status
 
 Current progress includes:
@@ -61,6 +112,8 @@ The training setup uses a compact decoder-only Transformer with:
 BlenderScratchGPT/
 ├── README.md
 ├── .gitignore
+├── activation_router_experiment_numpy.py  # Matched activation-routing experiment
+├── experiment_results/         # Executed report and raw JSON metrics
 ├── test.py                    # PINN research experiment for a mass-spring-damper system
 ├── scrape_blender.py          # Extract text from Blender HTML docs
 ├── clean_text.py              # Cleaning and normalization
