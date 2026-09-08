@@ -112,7 +112,7 @@ class NeuralModelManager:
             else:
                 return self.get_model("1")
                 
-        m, info = auto_load_model(path)
+        m, info = auto_load_model(path, target_seq_len=1024)
         m.to(self.device)
         m.eval()
         self.models[key] = (m, info)
@@ -142,7 +142,7 @@ class ChatApp:
             raw_prompt = prompt
             
         encoded = list(raw_prompt.encode('utf-8', 'ignore'))
-        seq_limit = 31 if is_ens else min(getattr(model_obj, 'seq_len', 32) - 1, 31)
+        seq_limit = 1023 if is_ens else min(getattr(model_obj, 'seq_len', 1024) - 1, 1023)
         
         token_routes = []
         sys.stdout.write("\nNeural Model Output:\n")

@@ -55,7 +55,7 @@ class SparseASTBlock(nn.Module):
         return torch.stack(o, 1)
 
 class SparseAST200M(nn.Module):
-    def __init__(self, d=800, h=1600, layers=28, seq_len=32, vocab=512, al_hidden=24):
+    def __init__(self, d=800, h=1600, layers=28, seq_len=1024, vocab=512, al_hidden=24):
         super().__init__()
         self.d = d
         self.h = h
@@ -78,7 +78,7 @@ class SparseAST200M(nn.Module):
             x = b(x)
         return self.h_out(self.n(x))
 
-def train(curriculum_path, output_dir, steps=300, batch_size=1, grad_accum=4, lr=1e-4, seq_len=32, resume_from=None):
+def train(curriculum_path, output_dir, steps=300, batch_size=1, grad_accum=4, lr=1e-4, seq_len=1024, resume_from=None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"[200M Training] Using execution device: {device}", flush=True)
     if torch.cuda.is_available():
@@ -200,6 +200,7 @@ if __name__ == '__main__':
     parser.add_argument('--grad_accum', type=int, default=4, help="Gradient accumulation steps")
     parser.add_argument('--curriculum', type=str, default=r"c:\Users\user\Downloads\checkpoint\blender_3dmath_curriculum.txt")
     parser.add_argument('--output_dir', type=str, default=r"c:\Users\user\Downloads\checkpoint")
+    parser.add_argument('--seq_len', type=int, default=1024, help="Context sequence length (default: 1024)")
     parser.add_argument('--resume', type=str, default=None)
     args = parser.parse_args()
     
@@ -210,5 +211,6 @@ if __name__ == '__main__':
         batch_size=args.batch_size,
         grad_accum=args.grad_accum,
         lr=args.lr,
+        seq_len=args.seq_len,
         resume_from=args.resume
     )

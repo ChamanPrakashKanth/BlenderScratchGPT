@@ -67,18 +67,25 @@ class SparseAST(nn.Module):
             x = b(x)
         return s.h(s.n(x))
 
-def auto_load_model(checkpoint_path):
+def auto_load_model(checkpoint_path, target_seq_len=1024):
     ck = torch.load(checkpoint_path, map_location='cpu')
     state = ck['model']
     
     # Infer architecture dynamically from tensor shapes
     vocab, d = state['e.weight'].shape
-    seq_len, _ = state['p.weight'].shape
+    orig_seq_len, _ = state['p.weight'].shape
     h, _ = state['b.0.up.weight'].shape
     al_hidden = state['b.0.al.0.weight'].shape[0]
     layers = len([k for k in state.keys() if 'b.' in k and '.n1.w' in k])
     
-    model = SparseAST(d=d, h=h, layers=layers, al_hidden=al_hidden, seq_len=seq_len, vocab=vocab)
+    # Dynamically expand positional embeddings to usable Blender script context
+    effective_seq_len = max(orig_seq_len, target_seq_len)
+    if effective_seq_len > orig_seq_len:
+        old_p = state['p.weight'] # [orig_seq_len, d]
+        new_p = F.interpolate(old_p.T.unsqueeze(0), size=effective_seq_len, mode='linear', align_corners=True).squeeze(0).T
+        state['p.weight'] = new_p
+    
+    model = SparseAST(d=d, h=h, layers=layers, al_hidden=al_hidden, seq_len=effective_seq_len, vocab=vocab)
     model.load_state_dict(state)
     model.eval()
     params = sum(p.numel() for p in model.parameters())
@@ -91,7 +98,8 @@ def auto_load_model(checkpoint_path):
         'h': h,
         'layers': layers,
         'al_hidden': al_hidden,
-        'seq_len': seq_len,
+        'seq_len': effective_seq_len,
+        'orig_seq_len': orig_seq_len,
         'params': params
     }
 
@@ -112,7 +120,7 @@ def evaluate_on_curriculum(model, text_data, seq_len=30, num_samples=30):
 def generate_completion(model, prompt_text, max_new_tokens=35, temperature=0.7):
     model.eval()
     encoded = list(prompt_text.encode('utf-8', 'ignore'))
-    seq_max = min(model.seq_len - 1, 31)
+    seq_max = min(model.seq_len - 1, 1023)
     
     with torch.no_grad():
         for _ in range(max_new_tokens):

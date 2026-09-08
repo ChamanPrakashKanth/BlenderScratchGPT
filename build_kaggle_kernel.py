@@ -189,10 +189,10 @@ class B(nn.Module):
         return torch.stack(o, 1)
 
 class M(nn.Module):
-    def __init__(s, d=800, h=1600, layers=28):
+    def __init__(s, d=800, h=1600, layers=28, seq_len=1024):
         super().__init__()
         s.e = nn.Embedding(512, d)
-        s.p = nn.Embedding(32, d)
+        s.p = nn.Embedding(seq_len, d)
         s.b = nn.ModuleList([B(d, h) for _ in range(layers)])
         s.n = N(d)
         s.h = nn.Linear(d, 512, bias=False)
@@ -204,17 +204,17 @@ class M(nn.Module):
         return s.h(s.n(x))
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-m = M(d=800, h=1600, layers=28).to(device)
+m = M(d=800, h=1600, layers=28, seq_len=1024).to(device)
 param_count = sum(p.numel() for p in m.parameters())
 print(f'Model sparse-AST-200M successfully built: {param_count:,} parameters ({param_count/1e6:.2f}M)')
 
 # -------------------------------------------------------------
-# 3. Training Loop with Mixed Precision & Checkpointing
+# 3. Training Loop with Mixed Precision & Checkpointing (Full Script Context)
 # -------------------------------------------------------------
 opt = torch.optim.AdamW(m.parameters(), lr=1e-4, weight_decay=0.01)
 scaler = torch.amp.GradScaler('cuda' if torch.cuda.is_available() else 'cpu')
 
-BATCH, SEQ, START, STEPS = 2, 32, 0, 1000
+BATCH, SEQ, START, STEPS = 2, 512, 0, 1000
 last = START
 t0 = time.time()
 print(f'Beginning training Sparse-AST 200M from step 1 to {STEPS}...')
@@ -259,7 +259,7 @@ for offset in range(1, STEPS + 1):
             'd': 800,
             'h': 1600,
             'layers': 28,
-            'seq_len': 32
+            'seq_len': 1024
         }, path)
         print(f'Step {step:04d}/{STEPS} | Loss: {loss_val:.4f} | Elapsed: {elapsed:.1f}s | Saved: {path}')
 
@@ -275,7 +275,7 @@ if last == START + STEPS:
         'd': 800,
         'h': 1600,
         'layers': 28,
-        'seq_len': 32
+        'seq_len': 1024
     }, final_path)
     print(f'SUCCESS: 200M Training finished at step {last}. Saved {final_path}')
 '''
