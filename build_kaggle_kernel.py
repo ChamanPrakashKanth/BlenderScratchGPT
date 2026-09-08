@@ -1,5 +1,6 @@
 """
-Builds notebook27596bd2cf.ipynb configured for Sparse-AST 200M Training on Kaggle GPU.
+Builds notebook27596bd2cf.ipynb configured for Sparse-AST 500M Training on Kaggle GPU.
+Exact Parameter Target: 501,301,280 parameters (~501.3M)
 """
 
 import json
@@ -9,7 +10,7 @@ def build_notebook():
     kaggle_dir = r"c:\Users\user\Downloads\checkpoint\notebook27596bd2cf"
     out_ipynb = os.path.join(kaggle_dir, "notebook27596bd2cf.ipynb")
     
-    code = r'''# Stabilized Sparse-AST 200M Training on Blender Dataset & 3D Math Curriculum
+    code = r'''# Stabilized Sparse-AST 500M Training on Blender Dataset & 3D Math Curriculum
 import os, glob, time, subprocess, math
 from pathlib import Path
 import torch
@@ -20,6 +21,7 @@ print(f'PyTorch: {torch.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'GPU: {torch.cuda.get_device_name(0)}')
+    print(f'Total VRAM: {round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)} GB')
 
 # -------------------------------------------------------------
 # 1. Dataset Preparation: JSONL, Blender Manual & 3D Math Curriculum
@@ -149,7 +151,7 @@ data = torch.tensor(list(raw_text.encode('utf8', 'ignore')), dtype=torch.long)
 print(f'Total training dataset size: {len(data):,} bytes')
 
 # -------------------------------------------------------------
-# 2. Stabilized Sparse-AST 200M Architecture (d=800, h=1600, layers=28)
+# 2. Stabilized Sparse-AST 500M Architecture (d=1184, h=2368, layers=32, heads=16)
 # -------------------------------------------------------------
 class N(nn.Module):
     def __init__(s, d):
@@ -159,11 +161,11 @@ class N(nn.Module):
         return x * torch.rsqrt(x.float().square().mean(-1, keepdim=True) + 1e-6).to(x.dtype) * s.w
 
 class B(nn.Module):
-    def __init__(s, d=800, h=1600):
+    def __init__(s, d=1184, h=2368):
         super().__init__()
         s.n1 = N(d)
         s.n2 = N(d)
-        s.a = nn.MultiheadAttention(d, 8, batch_first=True)
+        s.a = nn.MultiheadAttention(d, 16, batch_first=True)
         s.up = nn.Linear(d, h)
         s.r = nn.Linear(h, 3)
         s.down = nn.Linear(2*h, d)
@@ -189,8 +191,10 @@ class B(nn.Module):
         return torch.stack(o, 1)
 
 class M(nn.Module):
-    def __init__(s, d=800, h=1600, layers=28, seq_len=1024):
+    def __init__(s, d=1184, h=2368, layers=32, seq_len=1024):
         super().__init__()
+        s.d = d
+        s.seq_len = seq_len
         s.e = nn.Embedding(512, d)
         s.p = nn.Embedding(seq_len, d)
         s.b = nn.ModuleList([B(d, h) for _ in range(layers)])
@@ -198,86 +202,103 @@ class M(nn.Module):
         s.h = nn.Linear(d, 512, bias=False)
         s.h.weight = s.e.weight
     def forward(s, i):
+        if i.shape[1] > s.seq_len:
+            i = i[:, -s.seq_len:]
         x = s.e(i) + s.p(torch.arange(i.shape[1], device=i.device))[None]
         for b in s.b:
             x = b(x)
         return s.h(s.n(x))
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-m = M(d=800, h=1600, layers=28, seq_len=1024).to(device)
+m = M(d=1184, h=2368, layers=32, seq_len=1024).to(device)
 param_count = sum(p.numel() for p in m.parameters())
-print(f'Model sparse-AST-200M successfully built: {param_count:,} parameters ({param_count/1e6:.2f}M)')
+print(f'Model Sparse-AST-500M successfully built: {param_count:,} parameters ({param_count/1e6:.2f}M)')
 
 # -------------------------------------------------------------
-# 3. Training Loop with Mixed Precision & Checkpointing (Full Script Context)
+# 3. Training Loop with Mixed Precision & Gradient Accumulation
 # -------------------------------------------------------------
-opt = torch.optim.AdamW(m.parameters(), lr=1e-4, weight_decay=0.01)
+opt = torch.optim.AdamW(m.parameters(), lr=8e-5, weight_decay=0.01)
 scaler = torch.amp.GradScaler('cuda' if torch.cuda.is_available() else 'cpu')
 
-BATCH, SEQ, START, STEPS = 2, 512, 0, 1000
+BATCH, GRAD_ACCUM, SEQ, START, STEPS = 1, 4, 512, 0, 1000
 last = START
 t0 = time.time()
-print(f'Beginning training Sparse-AST 200M from step 1 to {STEPS}...')
+print(f'Beginning training Sparse-AST 500M from step 1 to {STEPS} (effective batch {BATCH*GRAD_ACCUM})...')
+
+opt.zero_grad(set_to_none=True)
+running_loss = 0.0
 
 for offset in range(1, STEPS + 1):
     step = START + offset
-    ix = torch.randint(0, len(data) - SEQ - 1, (BATCH,))
-    x = torch.stack([data[j:j+SEQ] for j in ix]).to(device)
-    y = torch.stack([data[j+1:j+SEQ+1] for j in ix]).to(device)
-    opt.zero_grad(set_to_none=True)
     
-    if torch.cuda.is_available():
-        with torch.amp.autocast('cuda', dtype=torch.float16):
+    # Gradient accumulation loop
+    step_loss = 0.0
+    for accum_i in range(GRAD_ACCUM):
+        ix = torch.randint(0, len(data) - SEQ - 1, (BATCH,))
+        x = torch.stack([data[j:j+SEQ] for j in ix]).to(device)
+        y = torch.stack([data[j+1:j+SEQ+1] for j in ix]).to(device)
+        
+        if torch.cuda.is_available():
+            with torch.amp.autocast('cuda', dtype=torch.float16):
+                logits = m(x)
+                loss = F.cross_entropy(logits.flatten(0, 1), y.flatten()) / GRAD_ACCUM
+            if not torch.isfinite(loss):
+                print(f'STOP non-finite loss at step {step}')
+                break
+            scaler.scale(loss).backward()
+            step_loss += loss.item() * GRAD_ACCUM
+        else:
             logits = m(x)
-            loss = F.cross_entropy(logits.flatten(0, 1), y.flatten())
-        if not torch.isfinite(loss):
-            print(f'STOP non-finite loss at step {step}')
-            break
-        scaler.scale(loss).backward()
+            loss = F.cross_entropy(logits.flatten(0, 1), y.flatten()) / GRAD_ACCUM
+            loss.backward()
+            step_loss += loss.item() * GRAD_ACCUM
+            
+    if torch.cuda.is_available():
         scaler.unscale_(opt)
         torch.nn.utils.clip_grad_norm_(m.parameters(), 0.3)
         scaler.step(opt)
         scaler.update()
     else:
-        logits = m(x)
-        loss = F.cross_entropy(logits.flatten(0, 1), y.flatten())
-        loss.backward()
         torch.nn.utils.clip_grad_norm_(m.parameters(), 0.3)
         opt.step()
-        
+    opt.zero_grad(set_to_none=True)
+    
     last = step
     if step % 100 == 0:
         elapsed = time.time() - t0
-        path = f'/kaggle/working/checkpoint_200m_{step:04d}.pt'
-        loss_val = float(loss.detach().cpu().item())
+        path = f'/kaggle/working/checkpoint_500m_{step:04d}.pt'
+        loss_val = float(step_loss)
+        # Save model weights in FP16 to keep checkpoints compact (~1.0 GB)
+        half_state = {k: v.half() if v.is_floating_point() else v for k, v in m.state_dict().items()}
         torch.save({
-            'model': m.state_dict(),
+            'model': half_state,
             'step': step,
             'loss': loss_val,
-            'config': 'sparse-AST-200M-stabilized',
+            'config': 'sparse-AST-500M-stabilized',
             'params': param_count,
-            'd': 800,
-            'h': 1600,
-            'layers': 28,
+            'd': 1184,
+            'h': 2368,
+            'layers': 32,
             'seq_len': 1024
         }, path)
         print(f'Step {step:04d}/{STEPS} | Loss: {loss_val:.4f} | Elapsed: {elapsed:.1f}s | Saved: {path}')
 
 if last == START + STEPS:
-    final_path = '/kaggle/working/final_sparse_ast_200m.pt'
-    loss_val = float(loss.detach().cpu().item())
+    final_path = '/kaggle/working/final_sparse_ast_500m.pt'
+    loss_val = float(step_loss)
+    half_state = {k: v.half() if v.is_floating_point() else v for k, v in m.state_dict().items()}
     torch.save({
-        'model': m.state_dict(),
+        'model': half_state,
         'step': last,
         'loss': loss_val,
-        'config': 'sparse-AST-200M-stabilized',
+        'config': 'sparse-AST-500M-stabilized',
         'params': param_count,
-        'd': 800,
-        'h': 1600,
-        'layers': 28,
+        'd': 1184,
+        'h': 2368,
+        'layers': 32,
         'seq_len': 1024
     }, final_path)
-    print(f'SUCCESS: 200M Training finished at step {last}. Saved {final_path}')
+    print(f'SUCCESS: 500M Training finished at step {last}. Saved {final_path}')
 '''
 
     nb_data = {

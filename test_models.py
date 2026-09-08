@@ -153,7 +153,8 @@ def run_tests():
         ("3M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast.pt"),
         ("10M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_10m.pt"),
         ("100M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_100m.pt"),
-        ("200M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_200m.pt")
+        ("200M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_200m.pt"),
+        ("500M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_500m.pt")
     ]
     
     prompts = [
@@ -165,19 +166,26 @@ def run_tests():
     
     results = []
     print("="*85)
-    print("      SPARSE-AST MODEL TEST SUITE (3M vs 10M vs 100M vs 200M & Top-K MoE)")
+    print("   SPARSE-AST MODEL TEST SUITE (3M vs 10M vs 100M vs 200M vs 500M & Top-K MoE)")
     print("="*85)
     
     for label, path in models_to_test:
         if not os.path.exists(path):
-            # Check for interim checkpoint if final not yet downloaded
-            if "200M" in label:
+            if "500M" in label:
+                alt_paths = sorted([p for p in os.listdir(r"c:\Users\user\Downloads\checkpoint") if p.startswith("checkpoint_500m_") and p.endswith(".pt")])
+                if alt_paths:
+                    path = os.path.join(r"c:\Users\user\Downloads\checkpoint", alt_paths[-1])
+                    label = f"500M Model ({alt_paths[-1]})"
+                else:
+                    print(f"Skipping {label}: training in progress on Kaggle GPU.")
+                    continue
+            elif "200M" in label:
                 alt_paths = sorted([p for p in os.listdir(r"c:\Users\user\Downloads\checkpoint") if p.startswith("checkpoint_200m_") and p.endswith(".pt")])
                 if alt_paths:
                     path = os.path.join(r"c:\Users\user\Downloads\checkpoint", alt_paths[-1])
                     label = f"200M Model ({alt_paths[-1]})"
                 else:
-                    print(f"Skipping {label}: {path} not found (training in progress)")
+                    print(f"Skipping {label}: {path} not found")
                     continue
             else:
                 print(f"Skipping {label}: file not found at {path}")

@@ -819,7 +819,7 @@ class NeuralModelManager:
             return self.models[key]
             
         if key == "1":
-            print("[Neural] Loading Top-K MoE Ensemble (3M + 10M + 100M) with 4K Context...", flush=True)
+            print("[Neural] Loading Top-K MoE Ensemble with 4K Context...", flush=True)
             ens = TopKSparseASTEnsemble(device=self.device, k=2)
             if os.path.exists(self.router_path):
                 ck = torch.load(self.router_path, map_location=self.device)
@@ -828,14 +828,18 @@ class NeuralModelManager:
             return self.models["1"]
             
         paths = {
-            "2": os.path.join(self.checkpoint_dir, "final_sparse_ast_200m.pt"),
-            "3": os.path.join(self.checkpoint_dir, "final_sparse_ast_100m.pt"),
-            "4": os.path.join(self.checkpoint_dir, "final_sparse_ast_10m.pt"),
-            "5": os.path.join(self.checkpoint_dir, "final_sparse_ast.pt")
+            "2": os.path.join(self.checkpoint_dir, "final_sparse_ast_500m.pt"),
+            "3": os.path.join(self.checkpoint_dir, "final_sparse_ast_200m.pt"),
+            "4": os.path.join(self.checkpoint_dir, "final_sparse_ast_100m.pt"),
+            "5": os.path.join(self.checkpoint_dir, "final_sparse_ast_10m.pt"),
+            "6": os.path.join(self.checkpoint_dir, "final_sparse_ast.pt")
         }
         
         path = paths.get(key)
         if not path or not os.path.exists(path):
+            if key == "2":
+                print("[-] 500M model training on Kaggle GPU. Using 200M model.", flush=True)
+                return self.get_model("3")
             print(f"[-] Checkpoint not found: {path}. Defaulting to Top-K Ensemble.", flush=True)
             return self.get_model("1")
                 
@@ -971,7 +975,7 @@ class ChatApp:
         print("  2. Raw Neural Autocomplete : Samples directly from Sparse-AST checkpoints with MoE routing.")
         print("\nCommands:")
         print("  /mode          - Toggle between Smart Copilot and Raw Neural mode")
-        print("  /model <1-5>   - Select Neural Model (1=MoE, 2=200M, 3=100M, 4=10M, 5=3M)")
+        print("  /model <1-6>   - Select Neural Model (1=MoE, 2=500M, 3=200M, 4=100M, 5=10M, 6=3M)")
         print("  /tokens <int>  - Set max generation tokens (e.g. 500, 1024, 2048, 4096)")
         print("  /temp <float>  - Set Neural temperature (0.05 to 0.7)")
         print("  /rep <float>   - Set repetition penalty (default 1.3)")
