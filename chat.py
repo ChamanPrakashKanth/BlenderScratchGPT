@@ -34,6 +34,72 @@ from topk_ensemble import TopKSparseASTEnsemble
 # -----------------------------------------------------------------------------
 
 SCRIPTS = {
+    "starter_template": '''# -------------------------------------------------------------
+# Clean Blender Python Starter Template
+# Setup Scene, Camera, 3-Point Light, and Procedural Object
+# -------------------------------------------------------------
+import bpy
+import bmesh
+import math
+from mathutils import Vector
+
+# 1. Clear Existing Mesh Objects
+for obj in list(bpy.context.scene.objects):
+    if obj.type in {'MESH', 'LIGHT', 'CAMERA'}:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+# 2. Create Procedural Chamfered Cube
+mesh = bpy.data.meshes.new("ProceduralMesh")
+obj = bpy.data.objects.new("ProceduralObject", mesh)
+bpy.context.collection.objects.link(obj)
+
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=2.0)
+bmesh.ops.bevel(bm, geom=bm.edges, offset=0.15, segments=3)
+bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+bm.to_mesh(mesh)
+bm.free()
+
+# 3. Add Studio Material (Principled BSDF)
+mat = bpy.data.materials.new("StudioPBR")
+mat.use_nodes = True
+nodes = mat.node_tree.nodes
+bsdf = nodes.get("Principled BSDF")
+if bsdf:
+    bsdf.inputs["Base Color"].default_value = (0.15, 0.55, 0.95, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.2
+    bsdf.inputs["Metallic"].default_value = 0.8
+obj.data.materials.append(mat)
+
+# 4. Setup Lighting
+light_data = bpy.data.lights.new(name="KeyLight", type='AREA')
+light_data.energy = 800.0
+light_data.size = 2.5
+light_obj = bpy.data.objects.new(name="KeyLight", object_data=light_data)
+light_obj.location = Vector((4.0, -4.0, 5.0))
+bpy.context.collection.objects.link(light_obj)
+
+# 5. Setup Camera
+cam_data = bpy.data.cameras.new("MainCamera")
+cam_data.lens = 50.0
+cam_obj = bpy.data.objects.new("MainCamera", cam_data)
+cam_obj.location = Vector((6.0, -6.0, 4.0))
+bpy.context.collection.objects.link(cam_obj)
+bpy.context.scene.camera = cam_obj
+
+# Track camera to object
+track = cam_obj.constraints.new(type='TRACK_TO')
+track.target = obj
+track.track_axis = 'TRACK_NEGATIVE_Z'
+track.up_axis = 'UP_Y'
+
+# Set Active and Select
+bpy.context.view_layer.objects.active = obj
+obj.select_set(True)
+
+print(f"[Blender AI] Scene initialized with {obj.name} and studio camera/lights.")
+''',
+
     "clean": '''# -------------------------------------------------------------
 # Safe Blender Scene Cleanup Script
 # Removes mesh, curve, light, and camera objects cleanly
@@ -715,7 +781,11 @@ class SmartBlenderCopilot:
     Blender Python scripts with 4,096-token script context capabilities.
     """
     def synthesize(self, prompt: str) -> str:
-        p = prompt.lower()
+        p = prompt.lower().strip()
+        
+        # Starter template or bpy import
+        if p in ["import bpy", "bpy", "starter", "template", "starter template", "boilerplate", "init scene", "setup", "setup scene"]:
+            return SCRIPTS["starter_template"]
         
         # Exact keyword matches for specialized production scripts
         if any(w in p for w in ["clean", "clear scene", "delete all", "empty scene", "reset scene"]):
@@ -753,6 +823,63 @@ class SmartBlenderCopilot:
         if not safe_name:
             safe_name = "CustomProceduralObject"
             
+        p = prompt.lower()
+        
+        # Geometry definition based on prompt intent
+        if any(w in p for w in ["sphere", "ball", "globe", "orb"]):
+            geo_code = """    # Create Procedural IcoSphere
+    bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.2)"""
+        elif any(w in p for w in ["cylinder", "pipe", "tube", "pillar", "column"]):
+            geo_code = """    # Create Procedural Cylinder
+    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=32, radius1=1.0, radius2=1.0, depth=2.5)"""
+        elif any(w in p for w in ["cone", "pyramid"]):
+            geo_code = """    # Create Procedural Cone
+    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=32, radius1=1.5, radius2=0.0, depth=3.0)"""
+        elif any(w in p for w in ["plane", "floor", "grid", "ground"]):
+            geo_code = """    # Create Planar Grid
+    bmesh.ops.create_grid(bm, x_segments=12, y_segments=12, size=10.0)"""
+        elif any(w in p for w in ["torus", "donut", "ring"]):
+            geo_code = """    # Create Procedural Torus / Ring
+    bmesh.ops.create_circle(bm, cap_ends=False, segments=32, radius=2.0)
+    for v in bm.verts:
+        v.co.x += 1.0"""
+        else:
+            geo_code = """    # Create Procedural Beveled Cube
+    bmesh.ops.create_cube(bm, size=2.0)
+    bmesh.ops.bevel(bm, geom=bm.edges, offset=0.15, segments=3)"""
+
+        # Material colors and PBR properties
+        base_color = "(0.2, 0.65, 0.95, 1.0)"
+        roughness = "0.25"
+        metallic = "0.7"
+        
+        if "red" in p:
+            base_color = "(0.90, 0.15, 0.15, 1.0)"
+            metallic = "0.2"
+        elif "green" in p:
+            base_color = "(0.15, 0.85, 0.25, 1.0)"
+            metallic = "0.1"
+        elif "yellow" in p or "gold" in p:
+            base_color = "(0.98, 0.82, 0.12, 1.0)"
+            metallic = "0.95"
+            roughness = "0.15"
+        elif "purple" in p or "violet" in p:
+            base_color = "(0.70, 0.15, 0.90, 1.0)"
+            metallic = "0.4"
+        elif "orange" in p:
+            base_color = "(0.95, 0.50, 0.05, 1.0)"
+            metallic = "0.2"
+        elif "white" in p:
+            base_color = "(0.95, 0.95, 0.95, 1.0)"
+            roughness = "0.2"
+        elif "black" in p or "dark" in p:
+            base_color = "(0.05, 0.05, 0.05, 1.0)"
+            roughness = "0.3"
+        elif "silver" in p or "metal" in p or "chrome" in p:
+            base_color = "(0.85, 0.85, 0.88, 1.0)"
+            metallic = "1.0"
+            roughness = "0.08"
+            
         return f'''# -------------------------------------------------------------
 # Blender Python Script: {prompt}
 # Generated by Blender AI Copilot (Sparse-AST 4K Context)
@@ -771,12 +898,8 @@ def build_{safe_name.lower()}():
     bpy.context.collection.objects.link(obj)
     
     bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=2.0)
-    
-    # Apply procedural beveling and subdivision
-    bmesh.ops.bevel(bm, geom=bm.edges, offset=0.15, segments=3)
+{geo_code}
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    
     bm.to_mesh(mesh)
     bm.free()
     
@@ -785,9 +908,9 @@ def build_{safe_name.lower()}():
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.2, 0.65, 0.95, 1.0)
-        bsdf.inputs["Roughness"].default_value = 0.25
-        bsdf.inputs["Metallic"].default_value = 0.7
+        bsdf.inputs["Base Color"].default_value = {base_color}
+        bsdf.inputs["Roughness"].default_value = {roughness}
+        bsdf.inputs["Metallic"].default_value = {metallic}
     obj.data.materials.append(mat)
     
     # 3. Position and Select
@@ -795,7 +918,7 @@ def build_{safe_name.lower()}():
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
     
-    print(f"[Blender AI] Successfully created {obj.name} with material {mat.name}.")
+    print(f"[Blender AI] Successfully created {{obj.name}} with material {{mat.name}}.")
     return obj
 
 if __name__ == "__main__":
@@ -803,7 +926,7 @@ if __name__ == "__main__":
 '''
 
 # -----------------------------------------------------------------------------
-# Neural Model Manager (3M, 10M, 100M, 200M & Top-K MoE Ensemble)
+# Neural Model Manager (3M, 10M, 100M, 200M, 200M-512 & Top-K MoE Ensemble)
 # -----------------------------------------------------------------------------
 
 class NeuralModelManager:
@@ -829,10 +952,11 @@ class NeuralModelManager:
             
         paths = {
             "2": os.path.join(self.checkpoint_dir, "final_sparse_ast_500m.pt"),
-            "3": os.path.join(self.checkpoint_dir, "final_sparse_ast_200m.pt"),
-            "4": os.path.join(self.checkpoint_dir, "final_sparse_ast_100m.pt"),
-            "5": os.path.join(self.checkpoint_dir, "final_sparse_ast_10m.pt"),
-            "6": os.path.join(self.checkpoint_dir, "final_sparse_ast.pt")
+            "3": os.path.join(self.checkpoint_dir, "final_sparse_ast_200m_512.pt") if os.path.exists(os.path.join(self.checkpoint_dir, "final_sparse_ast_200m_512.pt")) else os.path.join(self.checkpoint_dir, "final_sparse_ast_200m.pt"),
+            "4": os.path.join(self.checkpoint_dir, "final_sparse_ast_200m.pt"),
+            "5": os.path.join(self.checkpoint_dir, "final_sparse_ast_100m.pt"),
+            "6": os.path.join(self.checkpoint_dir, "final_sparse_ast_10m.pt"),
+            "7": os.path.join(self.checkpoint_dir, "final_sparse_ast.pt")
         }
         
         path = paths.get(key)
@@ -840,6 +964,9 @@ class NeuralModelManager:
             if key == "2":
                 print("[-] 500M model training on Kaggle GPU. Using 200M model.", flush=True)
                 return self.get_model("3")
+            if key == "3" and not os.path.exists(path):
+                print("[-] 200M-512 model training on Kaggle GPU. Using 200M model.", flush=True)
+                return self.get_model("4")
             print(f"[-] Checkpoint not found: {path}. Defaulting to Top-K Ensemble.", flush=True)
             return self.get_model("1")
                 
@@ -958,8 +1085,8 @@ class ChatApp:
         self.save_script(self.last_script_file)
         
         if is_ens and token_routes:
-            names = ["3M", "10M", "100M"]
-            counts = {names[i]: token_routes.count(i) for i in range(3) if token_routes.count(i) > 0}
+            names = ["3M", "10M", "100M", "200M", "200M-512", "500M"]
+            counts = {names[i]: token_routes.count(i) for i in range(min(len(names), len(model_obj.expert_names))) if token_routes.count(i) > 0}
             print(f"  [MoE Routing Attribution: {counts}]", flush=True)
 
     def print_banner(self):
@@ -975,7 +1102,7 @@ class ChatApp:
         print("  2. Raw Neural Autocomplete : Samples directly from Sparse-AST checkpoints with MoE routing.")
         print("\nCommands:")
         print("  /mode          - Toggle between Smart Copilot and Raw Neural mode")
-        print("  /model <1-6>   - Select Neural Model (1=MoE, 2=500M, 3=200M, 4=100M, 5=10M, 6=3M)")
+        print("  /model <1-7>   - Select Neural Model (1=MoE, 2=500M, 3=200M-512, 4=200M, 5=100M, 6=10M, 7=3M)")
         print("  /tokens <int>  - Set max generation tokens (e.g. 500, 1024, 2048, 4096)")
         print("  /temp <float>  - Set Neural temperature (0.05 to 0.7)")
         print("  /rep <float>   - Set repetition penalty (default 1.3)")

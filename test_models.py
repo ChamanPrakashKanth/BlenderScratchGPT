@@ -153,7 +153,8 @@ def run_tests():
         ("3M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast.pt"),
         ("10M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_10m.pt"),
         ("100M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_100m.pt"),
-        ("200M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_200m.pt"),
+        ("200M Model (128 Tokens)", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_200m.pt"),
+        ("200M Model (Native 512 Tokens)", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_200m_512.pt"),
         ("500M Model", r"c:\Users\user\Downloads\checkpoint\final_sparse_ast_500m.pt")
     ]
     

@@ -26,8 +26,10 @@ The Sparse-AST architecture incorporates recurrent state gates, learnable RMSNor
 | **Sparse-AST 3M** | 4,177,488 | 4 | 256 / 512 | 4,096 tokens | 16.2010 | 10,864,201 | `final_sparse_ast.pt` |
 | **Sparse-AST 10M** | 11,869,032 | 6 | 384 / 768 | 4,096 tokens | 21.2362 | 485,165,195 | `final_sparse_ast_10m.pt` |
 | **Sparse-AST 100M** | 103,393,784 | 18 | 704 / 1408 | 4,096 tokens | **3.9050** | **49.65** | `final_sparse_ast_100m.pt` |
-| **Sparse-AST 200M** | **204,372,272** | **28** | **800 / 1600** | **4,096 tokens** | **4.4455** | **85.25** | `final_sparse_ast_200m.pt` |
-| **Top-$K$ MoE Ensemble ($k=2$)** | **119,440,304** | **4+6+18** | **256 / 384 / 704** | **4,096 tokens** | **6.1258** | **457.52** | `topk_sparse_ast_router.pt` |
+| **Sparse-AST 200M (128 Tokens)** | 204,372,272 | 28 | 800 / 1600 | 4,096 tokens | 4.4455 | 85.25 | `final_sparse_ast_200m.pt` |
+| **Sparse-AST 200M (Native 512 Tokens)** | **201,121,072** | **28** | **800 / 1600** | **4,096 tokens** | **Native 512** | **Trained on T4** | `final_sparse_ast_200m_512.pt` |
+| **Sparse-AST 500M** | **501,301,280** | **32** | **1184 / 2368** | **4,096 tokens** | **Foundation** | **Scale** | `final_sparse_ast_500m.pt` |
+| **Top-$K$ MoE Ensemble ($k=2$)** | **All Backbones** | **Multi** | **Adaptive** | **4,096 tokens** | **3.6777** | **39.55** | `topk_sparse_ast_router.pt` |
 
 ### Top-$K$ Routing Benchmark
 
@@ -85,7 +87,7 @@ def create_gear(num_teeth=18, radius=2.2, tooth_depth=0.35, thickness=0.6):
 | Command | Description | Example |
 | :--- | :--- | :--- |
 | `/mode` | Toggle between Smart Copilot and Raw Neural Autocomplete | `/mode` |
-| `/model <1-5>` | Select Neural Model (1=MoE, 2=200M, 3=100M, 4=10M, 5=3M) | `/model 2` |
+| `/model <1-7>` | Select Neural Model (1=MoE, 2=500M, 3=200M-512, 4=200M-128, 5=100M, 6=10M, 7=3M) | `/model 3` |
 | `/tokens <int>` | Set maximum token generation limit (up to 4096) | `/tokens 1024` |
 | `/save <file>` | Save last generated script to a custom `.py` file | `/save my_gear.py` |
 | `/copy` | Copy last generated script to Windows clipboard for Blender | `/copy` |
