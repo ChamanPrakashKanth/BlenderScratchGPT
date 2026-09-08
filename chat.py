@@ -256,8 +256,8 @@ class ChatApp:
                 else:
                     self.stream_neural(user_input)
                     
-            except KeyboardInterrupt:
-                print("\nInterrupted.")
+            except (KeyboardInterrupt, EOFError):
+                print("\nGoodbye!")
                 break
             except Exception as e:
                 print(f"[-] Error: {e}")
