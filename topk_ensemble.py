@@ -65,7 +65,7 @@ class TopKSparseASTEnsemble(nn.Module):
         self.expert_infos = []
         for p in self.paths:
             print(f"[Top-K Ensemble] Loading expert: {os.path.basename(p)}...", flush=True)
-            m, info = auto_load_model(p, target_seq_len=1024)
+            m, info = auto_load_model(p, target_seq_len=4096)
             m.to(device)
             m.eval()
             for param in m.parameters():

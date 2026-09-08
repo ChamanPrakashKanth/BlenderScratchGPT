@@ -48,7 +48,7 @@ class B(nn.Module):
         return torch.stack(o, 1)
 
 class SparseAST(nn.Module):
-    def __init__(s, d, h, layers, al_hidden=24, seq_len=64, vocab=512):
+    def __init__(s, d, h, layers, al_hidden=24, seq_len=4096, vocab=512):
         super().__init__()
         s.d = d
         s.seq_len = seq_len
@@ -60,6 +60,8 @@ class SparseAST(nn.Module):
         s.h.weight = s.e.weight
 
     def forward(s, i):
+        if i.shape[1] > s.seq_len:
+            i = i[:, -s.seq_len:]
         seq = i.shape[1]
         pos = torch.arange(seq, device=i.device)[None]
         x = s.e(i) + s.p(pos)
@@ -67,7 +69,7 @@ class SparseAST(nn.Module):
             x = b(x)
         return s.h(s.n(x))
 
-def auto_load_model(checkpoint_path, target_seq_len=1024):
+def auto_load_model(checkpoint_path, target_seq_len=4096):
     ck = torch.load(checkpoint_path, map_location='cpu')
     state = ck['model']
     
@@ -78,7 +80,7 @@ def auto_load_model(checkpoint_path, target_seq_len=1024):
     al_hidden = state['b.0.al.0.weight'].shape[0]
     layers = len([k for k in state.keys() if 'b.' in k and '.n1.w' in k])
     
-    # Dynamically expand positional embeddings to usable Blender script context
+    # Dynamically expand positional embeddings to usable Blender script context (up to 4096 tokens)
     effective_seq_len = max(orig_seq_len, target_seq_len)
     if effective_seq_len > orig_seq_len:
         old_p = state['p.weight'] # [orig_seq_len, d]
@@ -103,11 +105,15 @@ def auto_load_model(checkpoint_path, target_seq_len=1024):
         'params': params
     }
 
-def evaluate_on_curriculum(model, text_data, seq_len=30, num_samples=30):
+def evaluate_on_curriculum(model, text_data, seq_len=1024, num_samples=20):
     losses = []
     with torch.no_grad():
-        for i in range(min(num_samples, len(text_data) - seq_len - 1)):
-            idx = (i * 137) % (len(text_data) - seq_len - 1)
+        max_start = len(text_data) - seq_len - 1
+        if max_start <= 0:
+            seq_len = len(text_data) - 2
+            max_start = 1
+        for i in range(min(num_samples, max_start)):
+            idx = (i * 317) % max_start
             x = text_data[idx : idx + seq_len].unsqueeze(0)
             y = text_data[idx + 1 : idx + seq_len + 1].unsqueeze(0)
             logits = model(x)
@@ -117,10 +123,10 @@ def evaluate_on_curriculum(model, text_data, seq_len=30, num_samples=30):
     ppl = math.exp(min(avg_loss, 20.0))
     return avg_loss, ppl
 
-def generate_completion(model, prompt_text, max_new_tokens=35, temperature=0.7):
+def generate_completion(model, prompt_text, max_new_tokens=100, temperature=0.5):
     model.eval()
     encoded = list(prompt_text.encode('utf-8', 'ignore'))
-    seq_max = min(model.seq_len - 1, 1023)
+    seq_max = min(model.seq_len - 1, 4095)
     
     with torch.no_grad():
         for _ in range(max_new_tokens):
