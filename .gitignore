@@ -12,9 +12,13 @@ blender_api_5_1/
 blender_api_5_1.txt
 checkpoints/
 data/
+# Model weights
 *.pt
+!topk_sparse_ast_router.pt
 *.bin
 *.ckpt
+*.docx
+~$*
 
 # Editor / OS
 .vscode/

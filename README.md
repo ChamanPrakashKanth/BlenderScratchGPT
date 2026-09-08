@@ -1,339 +1,161 @@
 # BlenderScratchGPT
 
-A lightweight research project for training a small GPT-style language model on Blender 5.1 Python API documentation.
-
-The goal is to build a compact Blender-focused code assistant that can learn patterns from the official API docs and generate sensible Blender Python snippets, with the longer-term possibility of extending the model with parameter-efficient fine-tuning such as LoRA or QLoRA.
-
-## What this project does
-
-- Scrapes Blender API reference pages from local HTML documentation
-- Cleans and normalizes the extracted text
-- Builds a custom character-level vocabulary and tokenized dataset
-- Trains a compact PyTorch Transformer model from scratch
-- Generates Blender-related text and Python code from a prompt
-- Includes exploratory scientific ML research experiments alongside the Blender model work
-
-This is an experimental project rather than a production Blender plugin or an officially supported AI tool.
-
-## Research experiments
-
-The repository also contains a separate exploratory script, `test.py`, which demonstrates a Physics-Informed Neural Network (PINN) for a mass-spring-damper system.
-
-This research prototype:
-
-- defines a neural network model for the displacement $x(t)$
-- computes the residual of the ODE $m \ddot{x} + c \dot{x} + kx = 0$
-- enforces the initial conditions via an additional loss term
-- trains the model with automatic differentiation in PyTorch
-- plots the predicted trajectory over time
-
-This experiment is not part of the Blender documentation model itself, but it shows a parallel research direction focused on scientific machine learning and differentiable physics. It is useful as a reference for testing optimization, autodiff, and PINN-style training workflows in the same project environment.
-
-### Adaptive activation routing
-
-`activation_router_experiment_numpy.py` contains a controlled, self-contained
-language-model experiment derived from the repository's decoder architecture.
-It tests three feed-forward activation paths:
-
-1. the existing ComplexReLU baseline
-2. an adaptive per-hidden-dimension router over linear, signed-log, and
-   stabilized-exponential transformations
-3. the composed path requested by the experiment, where routing happens first
-   and ComplexReLU activates the routed value:
-
-$$
-z \rightarrow R(z) \rightarrow \operatorname{ComplexReLU}(R(z))
-$$
-
-The arms use identical initialized model tensors, parameter count, seed,
-pre-generated batches, optimizer, and training budget. The baseline carries
-dormant router-shaped parameters to keep the total parameter count matched.
-
-#### Executed smoke-test results
-
-| Activation path | Final train loss | Validation loss | Median steps/s |
-|---|---:|---:|---:|
-| ComplexReLU | 2.9571 | 3.1509 | 262.58 |
-| Adaptive router | **2.9396** | **3.1110** | 99.85 |
-| ComplexReLU over router | 2.9577 | 3.1474 | 99.86 |
-
-All three arms completed 160/160 steps with finite losses and gradients. Pure
-adaptive routing reduced validation loss by 1.27% relative to ComplexReLU, while
-ComplexReLU over the router reduced it by only 0.11%. The composed model's soft
-router probabilities remained close to uniform; hard selections mildly favored
-signed-log, particularly in the second layer.
-
-These numbers are a single-seed CPU smoke test, not a general performance claim.
-The ignored Blender documentation corpus and `data/tokenized.pt` were not
-available in the execution environment, so the frozen character corpus was
-built from the repository's original tracked Python and Markdown files. The
-test also uses a reduced 20,352-parameter NumPy/autodiff decoder. A substantive
-conclusion requires the real Blender corpus, multiple seeds, confidence
-intervals, and replication in the full PyTorch model.
-
-Run the reproducible experiment with:
-
-```bash
-python activation_router_experiment_numpy.py
-```
-
-The generated report and raw loss/gradient curves are stored under
-`experiment_results/`.
-
-## Project status
-
-Current progress includes:
-
-- Blender 5.1 Python API documentation collected locally
-- HTML docs converted into a clean text corpus
-- Character-level tokenizer and dataset pipeline implemented
-- Tiny GPT-style Transformer implemented in PyTorch
-- Fourier positional encoding and custom activation logic added
-- Training pipeline working with a small model and checkpoint saving
-- Generation loop implemented for interactive prompting
-
-The current model is intentionally small and designed as a research baseline rather than a fully robust Blender assistant.
-
-## Model overview
-
-The training setup uses a compact decoder-only Transformer with:
-
-- vocabulary size from the extracted Blender corpus
-- context length of 128
-- embedding size of 128
-- 4 attention heads
-- 4 transformer blocks
-- AdamW optimizer
-- cross-entropy language modeling objective
-
-## Repository structure
-
-```text
-BlenderScratchGPT/
-├── README.md
-├── .gitignore
-├── activation_router_experiment_numpy.py  # Matched activation-routing experiment
-├── experiment_results/         # Executed report and raw JSON metrics
-├── test.py                    # PINN research experiment for a mass-spring-damper system
-├── scrape_blender.py          # Extract text from Blender HTML docs
-├── clean_text.py              # Cleaning and normalization
-├── blender_tokenizer.py       # Character-level tokenization pipeline
-├── dataset.py                 # Dataset and dataloader setup
-├── model.py                   # Tiny GPT model definition
-├── train.py                   # Training loop and checkpoint export
-├── generate.py                # Text generation from a trained model
-├── chat.py                    # Interactive prompt loop
-├── checkpoint.py              # Checkpoint utilities
-├── evaluate.py                # Evaluation utilities
-├── dataloader.py              # Optional loader helpers
-├── blender_api_5_1/           # Offline Blender API docs (HTML)
-├── data/                      # Tokenized data and generated corpora
-├── checkpoints/               # Saved model checkpoints
-├── .venv/                     # Local virtual environment (ignored by Git)
-└── blender_api_5_1.txt        # Generated combined text corpus
-```
-
-## Setup
-
-Create and activate a virtual environment:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-Install dependencies:
-
-```powershell
-pip install torch beautifulsoup4
-```
-
-If a requirements file is added later, use:
-
-```powershell
-pip install -r requirements.txt
-```
-
-## Data pipeline
-
-### 1) Collect the Blender API docs
-
-Place the local HTML reference files under the project folder, for example:
-
-```text
-blender_api_5_1/
-```
-
-### 2) Scrape the docs
-
-```powershell
-python scrape_blender.py
-```
-
-This script walks the HTML folder and extracts readable content into a text corpus.
-
-### 3) Clean and normalize the corpus
-
-```powershell
-python clean_text.py
-```
-
-### 4) Tokenize the corpus
-
-```powershell
-python blender_tokenizer.py
-```
-
-This creates a tokenized dataset in `data/tokenized.pt`.
-
-## Training
-
-Launch training with:
-
-```powershell
-python train.py
-```
-
-The training loop saves checkpoints into the `checkpoints/` directory. A typical checkpoint path is:
-
-```text
-checkpoints/blender_gpt.pt
-```
-
-## Generation
-
-After training, generate text or Blender-like code with:
-
-```powershell
-python generate.py
-```
-
-The script loads the saved model and samples from the learned distribution. You can also use:
-
-```powershell
-python chat.py
-```
-
-for an interactive prompt loop.
-
-## Example use
-
-A typical prompt might look like:
-
-```text
-Prompt: create a cube and move it along the x axis
-```
-
-The model may output Blender Python such as:
-
-```python
-import bpy
-
-obj = bpy.context.active_object
-obj.location.x += 2
-```
-
-This is meant as a research prototype and is not guaranteed to be correct or production-safe.
-
-## Important limitations
-
-- This project is trained on documentation text, not on verified Blender execution traces.
-- Training loss is not the same as functional correctness.
-- Generated code may be syntactically valid but semantically wrong.
-- The model is small and designed for experimentation, not as a production coding assistant.
-
-## Roadmap
-
-Possible next steps:
-
-1. Improve corpus cleaning and filtering
-2. Add validation metrics and held-out evaluation
-3. Improve generation quality with better sampling and decoding
-4. Add support for code-focused prompts and Blender scripting examples
-5. Explore LoRA/QLoRA fine-tuning from a stronger base model
-
-## License
-
-This project is intended for academic and experimental use. Add or review the repository license before public or commercial use.
-
-## Contributing
-
-Contributions are welcome for:
-
-- data-cleaning improvements
-- model architecture experiments
-- generation quality tuning
-- documentation and reproducibility enhancements
-
-- Scene manipulation
-- Blender automation
-- Add-on development
-- Python debugging
-
-## Evaluation Plan
-
-Future evaluation will include:
-
-1. Training loss
-2. Validation loss
-3. Held-out Blender API prompts
-4. Code generation quality
-5. Python syntax correctness
-6. Blender execution tests
-7. API accuracy
-8. Comparison between TinyGPT and Qwen2.5-Coder-3B
-9. LoRA/QLoRA performance
-
-The most important test is not simply whether the model produces plausible code, but whether the generated code actually executes correctly inside Blender.
-
-## Why TinyGPT?
-
-The custom model is intentionally small.
-
-The goal is to understand the complete pipeline:
-
-```text
-Documentation
-    ↓
-Tokenization
-    ↓
-Dataset
-    ↓
-Embeddings
-    ↓
-Attention
-    ↓
-Transformer blocks
-    ↓
-Loss
-    ↓
-Backpropagation
-    ↓
-Generation
-```
-
-This makes the project useful as a controlled experiment before moving to a much larger pretrained coding model.
-
-## Disclaimer
-
-This is an experimental educational/research project.
-
-A low training loss does not necessarily mean that the model has learned reliable Blender reasoning or that generated code is correct.
-
-Blender documentation and Blender itself are subject to their respective licenses. Refer to the official Blender project for licensing information.
-
-## Future Work
-
-- Add validation loss
-- Implement text generation
-- Test generated code in Blender
-- Improve dataset structure
-- Generate instruction-response examples
-- Fine-tune Qwen2.5-Coder-3B
-- Compare full fine-tuning vs LoRA/QLoRA
-- Build a Blender-side coding assistant
-- Evaluate generated scripts automatically
+A lightweight research and engineering suite for training, scaling, and ensembling custom **Sparse-AST** language models on Blender 5.x Python APIs, 3D mathematics, procedural geometry, and shader programming.
 
 ---
 
-**BlenderScratchGPT — from Blender documentation to a custom Transformer, and eventually to a Blender-specialized coding model.**
+## Highlights & Latest Updates
+
+- **Top-$K$ Mixture-of-Experts (MoE) Ensemble**: Connects the 3M, 10M, and 100M Sparse-AST models via a learned gating router with dynamic top-$k$ expert selection ($k \in \{1, 2, 3\}$), soft predictive weighting, and autoregressive generation.
+- **Model Scaling Suite**: Scaled architectures from 3M to 10M, 100M, and **200M** parameters ($d=800, h=1600, \text{layers}=28$).
+- **Expanded 11-Module Curriculum**: Production-grade synthetic & doc curriculum covering 3D Vector Math, 4x4 Affine Matrices, Quaternions, SLERP, Möller-Trumbore Ray-Triangle Intersections, `bmesh` procedural topology, `mathutils.kdtree` and `mathutils.bvhtree`, vectorized `numpy` mesh operations, `gpu` / `gpu_extras` viewport drawing, and `bpy_extras` mouse raycasting.
+- **Kaggle GPU Training Pipeline**: Fully automated Kaggle CLI integration with GPU acceleration (Tesla T4) and automatic checkpoint synchronization.
+- **Interactive Chat Console**: Launchable directly via `chat.bat` or `python chat.py` with real-time token streaming and dynamic expert routing attribution.
+
+---
+
+## Model Architecture & Benchmarks
+
+The Sparse-AST architecture incorporates recurrent state gates, learnable RMSNorm, multi-head causal self-attention, and nonlinear adaptive activations.
+
+| Model / Architecture | Parameters | Layers | Dims ($d/h$) | Curriculum Loss | Perplexity | Checkpoint / Config |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Sparse-AST 3M** | 3,145,296 | 4 | 256 / 512 | 15.5198 | 5,497,504 | `final_sparse_ast.pt` |
+| **Sparse-AST 10M** | 10,320,744 | 6 | 384 / 768 | 21.1346 | 485,165,195 | `final_sparse_ast_10m.pt` |
+| **Sparse-AST 100M** | 100,532,728 | 18 | 704 / 1408 | 3.7621 | 43.04 | `final_sparse_ast_100m.pt` |
+| **Top-$K$ MoE Ensemble ($k=2$)** | **113,998,768** | **4+6+18** | **256 / 384 / 704** | **6.1258** | **457.52** | `topk_sparse_ast_router.pt` |
+| **Sparse-AST 200M** | **201,121,072** | **28** | **800 / 1600** | *Training on Kaggle* | *Training on Kaggle* | `final_sparse_ast_200m.pt` |
+
+### Top-$K$ Routing Benchmark
+
+The Top-$K$ Router dynamically routes tokens across the 3 expert backbones based on context complexity:
+
+- **Top-1 Routing ($k=1$)**: Loss: `7.6603` | Perplexity: `2122.40` | Expert Shares: 3M: **31.5%**, 10M: **0.0%**, 100M: **68.5%**
+- **Top-2 Routing ($k=2$)**: Loss: **`6.1258`** | Perplexity: **`457.52`** | Expert Shares: 3M: **33.9%**, 10M: **31.0%**, 100M: **35.1%**
+- **Top-3 Routing ($k=3$)**: Loss: **`5.6627`** | Perplexity: **`287.94`** | Expert Shares: 3M: **33.3%**, 10M: **33.3%**, 100M: **33.3%**
+
+---
+
+## Repository Structure
+
+```text
+BlenderScratchGPT/
+├── chat.bat                           # Double-clickable Windows launcher for chat console
+├── chat.py                            # Interactive terminal chat & code generation interface
+├── topk_ensemble.py                   # Top-K MoE Ensemble Router connecting 3M, 10M, 100M
+├── topk_sparse_ast_router.pt          # Calibrated Top-K router weights (tracked in git)
+├── test_models.py                     # Evaluation and comparison suite across all models
+├── train_200m_blender_math.py         # 201M Sparse-AST model architecture & training pipeline
+├── blender_3dmath_curriculum.py       # 11-module Blender 3D Math & Python curriculum generator
+├── blender_3dmath_curriculum.txt      # Generated synthetic curriculum text corpus
+├── build_kaggle_kernel.py             # Generator for Kaggle training notebook
+├── monitor_and_download_kaggle.py     # Remote Kaggle job monitor & automated checkpoint downloader
+├── notebook27596bd2cf/                # Kaggle kernel configuration & metadata
+│   ├── kernel-metadata.json
+│   └── notebook27596bd2cf.ipynb
+├── model.py                           # Base Transformer model definitions
+├── train.py                           # Base training loop
+├── generate.py                        # Standalone generation script
+├── activation_router_experiment_numpy.py # NumPy autodiff adaptive activation experiment
+└── README.md
+```
+
+---
+
+## Quickstart
+
+### 1. Interactive Chat Console
+
+Double-click `chat.bat` in Windows Explorer or run from the command line:
+
+```cmd
+chat.bat
+```
+
+Inside the console, you can interactively generate code and inspect live MoE expert routing:
+
+```text
+User [Top-K MoE Ensemble (3M+10M+100M)] > import mathutils
+from mathutils import Vector
+v1 = Vector((1.0, 2.0, 3.0))
+
+Assistant: 
+v2 = Vector((4.0, 5.0, 6.0))
+dot_prod = v1.dot(v2)
+cross_prod = v1.cross(v2)
+  [MoE Routing: 3M: 8 tokens, 100M: 27 tokens]
+```
+
+#### Built-in Interactive Commands
+
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `/model <1-5>` | Switch active model (Ensemble, 100M, 200M, 10M, 3M) | `/model 2` |
+| `/k <1\|2\|3>` | Change Top-$K$ routing depth | `/k 2` |
+| `/temp <float>` | Set sampling temperature (0.05 to 1.5) | `/temp 0.6` |
+| `/tokens <int>` | Set maximum generated tokens | `/tokens 50` |
+| `/help` | Display sample prompts | `/help` |
+| `exit` | Exit console | `exit` |
+
+---
+
+### 2. Model Evaluation Suite
+
+Run the full evaluation and benchmark comparison suite across all checkpoints:
+
+```powershell
+python test_models.py
+```
+
+Outputs metrics table and comparative code completions for standard 3D math and Blender API prompts.
+
+---
+
+### 3. Top-$K$ MoE Router Calibration & Testing
+
+To inspect or re-train the Top-$K$ gating router:
+
+```powershell
+python topk_ensemble.py
+```
+
+---
+
+### 4. Kaggle GPU Training & Checkpoint Download
+
+To train the 200M model on Kaggle GPU:
+
+1. **Build & Push Notebook**:
+   ```powershell
+   python build_kaggle_kernel.py
+   kaggle kernels push -p notebook27596bd2cf
+   ```
+
+2. **Monitor & Auto-Download Checkpoints**:
+   ```powershell
+   python monitor_and_download_kaggle.py chamankanth/notebook27596bd2cf ./
+   ```
+
+---
+
+## 3D Mathematics & Blender Python Curriculum
+
+The expanded synthetic curriculum (`blender_3dmath_curriculum.py`) includes 11 structured modules:
+
+1. **3D Vector Mathematics**: Dot product, cross product, projection, rejection, reflection, normal calculation, LERP, distance.
+2. **4x4 Affine Transformation Matrices**: Translation, rotation, scale, shear, matrix composition (`@`), inversion, decomposition (`decompose()`), world $\leftrightarrow$ local transforms.
+3. **Quaternions, Euler Angles & SLERP**: Gimbal lock mitigation, axis-angle representations, SLERP spherical interpolation, swing-twist decomposition.
+4. **3D Geometry & Intersection Algorithms**: Möller-Trumbore ray-triangle intersection, ray-plane intersection, AABB bounding box computation, `mathutils.geometry`.
+5. **Core `bpy` API**: Datablocks (`bpy.data`), context state (`bpy.context`), operators (`bpy.ops`), custom operator classes (`bpy.types.Operator`), modifiers (`SUBSURF`, `BEVEL`).
+6. **Procedural `bmesh` Geometry**: Parametric Möbius strip and torus construction, N-gon handling, topological extrusion, bevel, bisect, custom UV and vertex weight layers.
+7. **`mathutils.kdtree` & `mathutils.bvhtree`**: $O(\log N)$ nearest-neighbor spatial searches, raycasting against 3D polygon meshes.
+8. **Vectorized Mesh Operations with `numpy`**: 50x-100x accelerated vertex deformations using `foreach_get` and `foreach_set`.
+9. **3D Viewport Drawing with `gpu` & `gpu_extras.batch`**: Custom 3D coordinate frame gizmos, immediate drawing pipelines.
+10. **Interactive Raycasting with `bpy_extras.view3d_utils`**: Screen mouse pixel $\to$ 3D world origin and ray projection.
+11. **Procedural Shader Nodes**: Principled BSDF, Vector Math nodes (`DOT_PRODUCT`, `CROSS_PRODUCT`), Color Ramps.
+
+---
+
+## License
+
+This project is intended for educational, academic, and experimental research. Blender documentation and Blender APIs are subject to the Blender Foundation licensing.
