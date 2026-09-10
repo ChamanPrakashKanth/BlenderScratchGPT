@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use BlenderScratchGPT or Sparse-AST in research, please cite this repository."
+title: "BlenderScratchGPT: Sparse-AST Language Models for Blender Code Generation"
+type: software
+authors:
+  - family-names: "Kanth"
+    given-names: "Chaman Prakash"
+repository-code: "https://github.com/ChamanPrakashKanth/BlenderScratchGPT"
+url: "https://github.com/ChamanPrakashKanth/BlenderScratchGPT"
+abstract: >-
+  A research and engineering suite for training and evaluating custom Sparse-AST
+  language models for Blender Python, procedural geometry, 3D mathematics, and
+  code generation, including local inference and mixture-of-experts experiments.
+keywords:
+  - "Blender AI"
+  - "Blender Python"
+  - "code generation"
+  - "small language model"
+  - "mixture of experts"
+  - "Sparse-AST"
+  - "local LLM"
+  - "procedural geometry"
